@@ -42,7 +42,13 @@ PTDB.prototype.load = function(callback) {
         throw new VError(e, 'Your db appears to have corrupted');
       }
     } else {
-      $this.db = {};
+      $this.db = {
+        records: {},
+        info: {
+          created: Date.now(),
+          modified: Date.now()
+        }
+      };
     }
 
     $this.startSync();
@@ -82,6 +88,8 @@ PTDB.prototype.save = function(callback) {
   if (!this.db) {
     throw new VError('DB has not been loaded');
   }
+
+  this.db.info.modified = Date.now();
 
   var serialized = this.serialize(),
     $this = this;
@@ -132,14 +140,18 @@ PTDB.prototype.unserialize = function(serialized) {
  * @return item
  */
 PTDB.prototype.dbWalk = function(path, value) {
-  var splody = path.split('.'),
-    item = this.db,
+  var splody = this.parsePath(path),
+    item = this.db.records,
     value = value || {};
+
+  if (splody === '.') {
+    return item;
+  }
 
   for (var i = 0; i < splody.length - 1; i++) {
     if (!item.hasOwnProperty(splody[i])) {
       item[splody[i]] = {}; // create it!
-    } else if (i < splody.length - 1 && typeof item[splody[i] !== 'object']) {
+    } else if (i < splody.length - 1 && typeof item[splody[i]] !== 'object') {
       throw new VError('%s of %s is not an object, cannot go further', splody[i], path);
     }
 
@@ -151,7 +163,16 @@ PTDB.prototype.dbWalk = function(path, value) {
   }
 
   return item[splody[i]];
-}
+};
+
+/**
+ * Parses a path into an array of successive items.
+ * @param string path The path to parse
+ * @return array ['item1', 'item2', ...]
+ */
+PTDB.prototype.parsePath = function(path) {
+  return path === '.' ? path : path.split('.');
+};
 
 /**
  * Read an item from the db.
@@ -176,6 +197,68 @@ PTDB.prototype.read = function(path, callback) {
 };
 
 /**
+ * Pop an item from an array in the db.
+ * @param string   path     The structure path
+ * @param function callback The callback will get err, item
+ */
+PTDB.prototype.pop = function(path, callback) {
+  try {
+    var item = this.dbWalk(path);
+
+    if (!util.isArray(item)) {
+      throw new VError('%s is not an array', path);
+    }
+
+    var val = item.pop();
+    this.save(function(err) {
+      if (err) {
+        throw err;
+      }
+      if (typeof callback === 'function') {
+        callback(null, val);
+      }
+    });
+  } catch (e) {
+    if (typeof callback === 'function') {
+      callback(e);
+    } else {
+      throw e;
+    }
+  }
+};
+
+/**
+ * Shift an item from an array in the db.
+ * @param string   path     The structure path
+ * @param function callback The callback will get err, item
+ */
+PTDB.prototype.shift = function(path, callback) {
+  try {
+    var item = this.dbWalk(path);
+
+    if (!util.isArray(item)) {
+      throw new VError('%s is not an array', path);
+    }
+
+    var val = item.shift();
+    this.save(function(err) {
+      if (err) {
+        throw err;
+      }
+      if (typeof callback === 'function') {
+        callback(null, val);
+      }
+    });
+  } catch (e) {
+    if (typeof callback === 'function') {
+      callback(e);
+    } else {
+      throw e;
+    }
+  }
+};
+
+/**
  * Write an item to the db.
  * @param string   path     The structure path
  * @param mixed    value    The data to store in the path
@@ -184,7 +267,11 @@ PTDB.prototype.read = function(path, callback) {
 PTDB.prototype.write = function(path, value, callback) {
   try {
     var item = this.dbWalk(path, value);
-    this.save(function() {
+    this.save(function(err) {
+      if (err) {
+        throw err;
+      }
+
       if (typeof callback === 'function') {
         callback(null, item);
       } else {
@@ -215,7 +302,11 @@ PTDB.prototype.push = function(path, value, callback) {
 
     item.push(value);
 
-    this.save(function() {
+    this.save(function(err) {
+      if (err) {
+        throw err;
+      }
+
       if (typeof callback === 'function') {
         callback(null, item);
       } else {
@@ -246,11 +337,63 @@ PTDB.prototype.unshift = function(path, value, callback) {
 
     item.unshift(value);
 
-    this.save(function() {
+    this.save(function(err) {
+      if (err) {
+        throw err;
+      }
+
       if (typeof callback === 'function') {
         callback(null, item);
       } else {
         return item;
+      }
+    });
+  } catch (e) {
+    if (typeof callback === 'function') {
+      callback(e);
+    } else {
+      throw e;
+    }
+  }
+};
+
+/**
+ * Unshift an item onto an array in the db.
+ * @param string   path     The structure path
+ * @param function callback The callback will get err
+ */
+PTDB.prototype.unset = function(path, callback) {
+  var splody = this.parsePath(path),
+    item = this.db.records;
+
+  try {
+    if (splody === '.') {
+      this.db.records = {};
+      this.save(function() {
+        if (typeof callback === 'function') {
+          callback();
+        }
+      });
+    }
+
+    for (var i = 0; i < splody.length - 1; i++) {
+      if (!item.hasOwnProperty(splody[i])) {
+        // It doesn't exist, so it's deleted
+        i = splody.length;
+      } else if (i < splody.length - 1 && typeof item[splody[i]] !== 'object') {
+        throw new VError('%s of %s is not an object, cannot go further', splody[i], path);
+      } else {
+        item = item[splody[i]];
+      }
+    }
+
+    if (item.hasOwnProperty(splody[i])) {
+      delete item[splody[i]];
+    }
+
+    this.save(function() {
+      if (typeof callback === 'function') {
+        callback();
       }
     });
   } catch (e) {

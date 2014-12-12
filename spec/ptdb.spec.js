@@ -25,6 +25,48 @@ describe('PTDB', function() {
     });
   });
 
+  it ('should close a db', function(done) {
+    var mydb = new PTDB(testDir + '/testDb');
+    mydb.load(function() {
+      mydb.close(function() {
+        expect(mydb.db).toBeFalsy();
+        expect(mydb.syncInterval).toBeFalsy();
+        done();
+      });
+    });
+  });
+
+  it ('should write db to file', function(done) {
+    var mydb = new PTDB(testDir + '/testDb');
+    mydb.load(function() {
+      mydb.write('foo', 'bar', function(err) {
+        expect(err).toBeFalsy();
+        mydb.save(function(err) {
+          expect(err).toBeFalsy();
+          var serialized = mydb.serialize();
+          expect(serialized.length).toBeGreaterThan(0);
+          fs.readFile(mydb.filename, function(err, contents) {
+            expect(err).toBeFalsy();
+            expect(contents.toString()).toEqual(serialized);
+            // return lock
+            mydb.close(function() {
+              var samedb = new PTDB(testDir + '/testDb');
+              samedb.load(function() {
+                samedb.read('foo', function(err, item) {
+                  expect(err).toBeFalsy();
+                  expect(item).toEqual('bar');
+                  samedb.close(function() {
+                    done();
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+
   it ('should read an existing db', function(done) {
     var mydb = new PTDB(testDir + '/testDb');
     mydb.load(function() {
@@ -41,6 +83,205 @@ describe('PTDB', function() {
                 done();
               });
             });
+          });
+        });
+      });
+    });
+  });
+
+  describe('Writing', function() {
+    var mydb;
+    beforeEach(function() {
+      mydb = new PTDB(testDir + '/testDb');
+    });
+
+    it ('should write a simple key', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          // return lock
+          mydb.close(function() {
+            done();
+          });
+        });
+      });
+    });
+
+    it ('should write a complex key', function(done) {
+      mydb.load(function() {
+        mydb.write('fe.fi.fo.fum', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          // return lock
+          mydb.close(function() {
+            done();
+          });
+        });
+      });
+    });
+
+    it ('should delete an item', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.unset('foo', function(err) {
+            expect(err).toBeFalsy();
+            mydb.read('foo', function(err, item) {
+              expect(err).toBeFalsy();
+              expect(item).not.toEqual('bar');
+              // return lock
+              mydb.close(function() {
+                done();
+              });
+            });
+          });
+        });
+      });
+    });
+
+    it ('should delete everything', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.unset('.', function(err) {
+            expect(err).toBeFalsy();
+            expect(mydb.db.records).toEqual({});
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+
+    it ('should push an item onto an array', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', [], function(err) {
+          expect(err).toBeFalsy();
+          mydb.push('foo', 'bar', function(err) {
+            expect(err).toBeFalsy();
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+
+    it ('should unshift an item onto an array', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', [], function(err) {
+          expect(err).toBeFalsy();
+          mydb.unshift('foo', 'bar', function(err) {
+            expect(err).toBeFalsy();
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+  });
+
+  describe('PTDB Reading', function() {
+    var mydb;
+    beforeEach(function() {
+      mydb = new PTDB(testDir + '/testDb');
+    });
+
+    it ('should read from head', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.read('.', function(err, item) {
+            expect(err).toBeFalsy();
+            expect(item).toEqual({foo: 'bar'});
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+
+    it ('should read a simple key', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.read('foo', function(err, item) {
+            expect(err).toBeFalsy();
+            expect(item).toEqual('bar');
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+
+    it ('should read a complex key', function(done) {
+      mydb.load(function() {
+        mydb.write('fe.fi.fo.fum', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.read('fe.fi.fo.fum', function(err, item) {
+            expect(err).toBeFalsy();
+            expect(item).toEqual('bar');
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          });
+        });
+      });
+    });
+
+    it ('should pop an item off an array', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', ['fizz', 'buzz'], function(err) {
+          expect(err).toBeFalsy();
+          mydb.read('foo', function(err, item) {
+            expect(err).toBeFalsy();
+            expect(item).toEqual(['fizz', 'buzz']);
+            mydb.pop('foo', function(err, item) {
+              expect(err).toBeFalsy();
+              expect(item).toEqual('buzz');
+              mydb.read('foo', function(err, item) {
+                expect(err).toBeFalsy();
+                expect(item).toEqual(['fizz']);
+                // return lock
+                mydb.close(function() {
+                  done();
+                });
+              });
+            })
+          });
+        });
+      });
+    });
+
+    it ('should shift an item off an array', function(done) {
+      mydb.load(function() {
+        mydb.write('foo', ['fizz', 'buzz'], function(err) {
+          expect(err).toBeFalsy();
+          mydb.read('foo', function(err, item) {
+            expect(err).toBeFalsy();
+            expect(item).toEqual(['fizz', 'buzz']);
+            mydb.shift('foo', function(err, item) {
+              expect(err).toBeFalsy();
+              expect(item).toEqual('fizz');
+              mydb.read('foo', function(err, item) {
+                expect(err).toBeFalsy();
+                expect(item).toEqual(['buzz']);
+                // return lock
+                mydb.close(function() {
+                  done();
+                });
+              });
+            })
           });
         });
       });

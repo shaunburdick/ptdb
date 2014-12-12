@@ -42,6 +42,11 @@ mydb.load(function() {
     if (!err) console.log(item);
   });
 
+  // Read from the top/head (.)
+  mydb.read('.', function(err, item) {
+    if (!err) console.log(item);
+  });
+
   // pop an item off an array in the db
   mydb.pop('path.to.array', function(err, item) {
     if (!err) console.log(item);
@@ -50,17 +55,6 @@ mydb.load(function() {
   // shift an item off an array in the db
   mydb.shift('path.to.array', function(err, item) {
     if (!err) console.log(item);
-  });
-
-  // find an item in the db
-  // items will be an array of objects [ { path: 'path.to.item1', item: item }, ...]
-  mydb.find('something', function(err, items) {
-    if (!err && items.length) console.dir(items);
-  });
-
-  // for speed, you can limit the search to a specific part of the tree
-  mydb.find('something', 'path.to.limit.to', function(err, items) {
-    if (!err && items.length) console.dir(items);
   });
 });
 ```
@@ -81,15 +75,20 @@ mydb.load(function() {
   mydb.unshift('path.to.array', item, function(err) {
     if (!err) console.log('Item unshifted to array');
   });
-  ```
+});
+```
 
-  ### Deleting
-  You can delete items from the db as well.
+### Deleting
+You can delete items from the db as well.
 
-  ```
-  mydb.unset('path.to.item', function(err) {
-    if (!err) console.log('Item deleted');
-  });
+```
+mydb.unset('path.to.item', function(err) {
+  if (!err) console.log('Item deleted');
+});
+
+// You can truncate the whole db by unsetting head (.)
+mydb.unset('.', function(err) {
+  if (!err) console.log('Item deleted');
 });
 ```
 
@@ -101,3 +100,9 @@ mydb.close();
 ```
 
 You can always reopen the db by loading again!
+
+## Testing
+Run tests via
+```
+npm run test
+```

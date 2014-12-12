@@ -26,6 +26,7 @@ function PTDB(path, config) {
   this.db = null; // The in-memory instance of the db
   this.syncInterval = null; // The interval object
   this.dbHash = null; // used to check for changes
+  this.watchers = {}; // A table of paths and their watchers
 }
 
 util.inherits(PTDB, EventEmitter);
@@ -70,6 +71,9 @@ PTDB.prototype.load = function(callback) {
     $this.loaded = true;
 
     $this.startSync();
+    $this.on($this.events.save, function() {
+      $this.triggerWatchers();
+    });
     $this.emit($this.events.load);
     if (typeof callback === 'function') {
       callback.apply($this);
@@ -170,9 +174,11 @@ PTDB.prototype.close = function(callback) {
 
 /**
  * Converts db to saveable string
+ * @param mixed serializeMe If empty it will use this.db
  */
-PTDB.prototype.serialize = function() {
-  return JSON.stringify(this.db);
+PTDB.prototype.serialize = function(serializeMe) {
+  serializeMe = serializeMe || this.db;
+  return JSON.stringify(serializeMe);
 };
 
 /**
@@ -187,27 +193,36 @@ PTDB.prototype.unserialize = function(serialized) {
  * @return string
  */
 PTDB.prototype.hashDB = function() {
-  // Update the hash.
-  var hasher = crypto.createHash('md5').update(this.serialize());
+  return this.hash(this.serialize());
+}
+
+/**
+ * Return a hash of the data.
+ * @param string hashMe
+ * @return string
+ */
+PTDB.prototype.hash = function(hashMe) {
+  var hasher = crypto.createHash('md5').update(hashMe);
   return hasher.digest('hex');
 }
 
 /**
  * Parse a path and walk the db.
- * @param string path
+ * @param string  path
+ * @param mixed   value
+ * @param boolean noCreate If true, it will not create path
  * @return item
  */
-PTDB.prototype.dbWalk = function(path, value) {
+PTDB.prototype.dbWalk = function(path, value, noCreate) {
   var splody = this.parsePath(path),
-    item = this.db.records,
-    value = value || {};
+    item = this.db.records;
 
   if (splody === '.') {
     return item;
   }
 
   for (var i = 0; i < splody.length - 1; i++) {
-    if (!item.hasOwnProperty(splody[i])) {
+    if (!noCreate && !item.hasOwnProperty(splody[i])) {
       item[splody[i]] = {}; // create it!
     } else if (i < splody.length - 1 && typeof item[splody[i]] !== 'object') {
       throw new VError('%s of %s is not an object, cannot go further', splody[i], path);
@@ -216,7 +231,7 @@ PTDB.prototype.dbWalk = function(path, value) {
     item = item[splody[i]];
   }
 
-  if (!item.hasOwnProperty(splody[i])) {
+  if (value || !item.hasOwnProperty(splody[i])) {
     item[splody[i]] = value;
   }
 
@@ -465,6 +480,65 @@ PTDB.prototype.unset = function(path, callback) {
       callback(e);
     } else {
       throw e;
+    }
+  }
+};
+
+/**
+ * Watch a path and execute a function when it changes.
+ * @param string   path
+ * @param function callback Gets data, path as arguments
+ */
+PTDB.prototype.watch = function(path, callback) {
+  if (!this.watchers.hasOwnProperty(path)) {
+    this.watchers[path] = {
+      callbacks: [],
+      lastHash: null,
+      prevVal: null
+    };
+  }
+
+  this.watchers[path].callbacks.push(callback);
+};
+
+/**
+ * Unset any watchers for a path.
+ * @param string path
+ */
+PTDB.prototype.unwatch = function(path) {
+  if (this.watchers.hasOwnProperty(path)) {
+    delete this.watchers[path];
+  }
+};
+
+/**
+ * Check for changes and trigger watchers.
+ */
+PTDB.prototype.triggerWatchers = function() {
+  for (var i in this.watchers) {
+    if (this.watchers.hasOwnProperty(i)) {
+      $this = this;
+      (function() {
+        var path = i;
+        $this.read(path, function(err, item) {
+          if (err) {
+            throw err;
+          }
+
+          var newHash = $this.hash($this.serialize(item));
+          var prevVal = $this.watchers[path].prevVal;
+          if ($this.watchers[path].lastHash !== newHash) {
+            $this.watchers[path].lastHash = newHash;
+            $this.watchers[path].prevVal = item;
+            // Time to call watchers
+            $this.watchers[path].callbacks.forEach(function(callback) {
+              process.nextTick(function() {
+                callback.apply($this, [item, prevVal, path]);
+              });
+            });
+          }
+        });
+      }());
     }
   }
 };

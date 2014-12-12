@@ -111,6 +111,21 @@ PTDB has the following events:
 * **save**: This is emitted when the db is saved
 * **close**: This is emitted when the db is closed
 
+### Watchers
+Watchers are functions that watch parts of the db and are called when changes occur. You can register more than one watcher for a given path.
+
+**Note**: Watchers are only triggered on saves and will always be called once.
+
+```
+// Register a watcher
+mydb.watch('path.to.watch', function(newVal, oldVal, path) {
+  // run a mapreduce or something
+});
+
+// Remove all watchers for a path
+mydb.unwatch('path.to.unwatch');
+```
+
 ## Testing
 Run tests via
 

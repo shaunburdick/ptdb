@@ -115,12 +115,31 @@ describe('PTDB', function() {
 
     it ('should write a complex key', function(done) {
       mydb.load(function() {
-        mydb.write('fe.fi.fo.fum', 'bar', function(err) {
+        mydb.write('some.key', 'bar', function(err) {
           expect(err).toBeFalsy();
           // return lock
           mydb.close(function() {
             done();
           });
+        });
+      });
+    });
+
+    it ('should replace a value', function(done) {
+      mydb.load(function() {
+        mydb.write('some.key', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          mydb.write('some.key', 'foo', function(err) {
+            expect(err).toBeFalsy();
+            mydb.read('some.key', function(err, item) {
+              expect(err).toBeFalsy();
+              expect(item).toEqual('foo');
+              // return lock
+              mydb.close(function() {
+                done();
+              });
+            });
+          })
         });
       });
     });
@@ -367,6 +386,105 @@ describe('PTDB', function() {
       });
 
       waitsFor(function() { return closed; }, 'Close event triggered', 1000);
+    });
+  });
+
+  describe('Watchers', function() {
+    var mydb;
+    beforeEach(function() {
+      mydb = new PTDB(testDir + '/testDb', {syncInterval: 500});
+    });
+
+    it ('should trigger a watcher', function(done) {
+      var changed = false;
+      mydb.load(function() {
+        mydb.write('all.your.base', 'are belong to us', function(err) {
+          expect(err).toBeFalsy();
+          mydb.watch('all.your.base', function(newVal, oldVal, path) {
+            changed = true;
+          });
+          mydb.write('all.your.base', 'foo', function(err) {
+            expect(err).toBeFalsy();
+
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return changed; }, 'Watcher to be triggered', 2000);
+    });
+
+    it ('should not trigger a watcher', function(done) {
+      var changed = 0, closed = false;
+      mydb.load(function() {
+        mydb.write('some.place', 'fizz', function(err) {
+          expect(err).toBeFalsy();
+          mydb.watch('some.place', function() {
+            changed++;
+          });
+          mydb.write('somewhere.else', 'foo', function(err) {
+            expect(err).toBeFalsy();
+            // return lock
+            mydb.close(function() {
+              closed = true;
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return closed && changed === 1; }, 'Watcher to be triggered', 1000);
+    });
+
+    it ('should unwatch a path', function(done) {
+      var changed = 0, closed = false;
+      mydb.load(function() {
+        mydb.watch('some.place', function() {
+          changed++;
+        });
+        mydb.write('some.place', 'fizz', function(err) {
+          expect(err).toBeFalsy();
+          mydb.unwatch('some.place');
+          mydb.write('some.place', 'foo', function(err) {
+            expect(err).toBeFalsy();
+            // return lock
+            mydb.close(function() {
+              closed = true;
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return closed && changed === 1; }, 'Watcher to be triggered', 1000);
+    });
+
+    it ('should trigger multiple watchers', function(done) {
+      var changed = 0, alsoChanged = 0, closed = false;
+      mydb.load(function() {
+        mydb.watch('some.place', function() {
+          changed++;
+        });
+        mydb.watch('some.place', function() {
+          alsoChanged++;
+        });
+        mydb.write('some.place', 'fizz', function(err) {
+          expect(err).toBeFalsy();
+          mydb.write('some.place', 'foo', function(err) {
+            expect(err).toBeFalsy();
+            // return lock
+            mydb.close(function() {
+              closed = true;
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return closed && changed === 2 && alsoChanged === 2; }, 'Watcher to be triggered', 1000);
     });
   });
 });

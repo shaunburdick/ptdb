@@ -105,6 +105,12 @@ mydb.close();
 
 You can always reopen the db by loading again!
 
+### Events
+PTDB has the following events:
+* **load**: This is emitted when the db is loaded
+* **save**: This is emitted when the db is saved
+* **close**: This is emitted when the db is closed
+
 ## Testing
 Run tests via
 

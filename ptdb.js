@@ -1,6 +1,8 @@
 var VError = require('verror')
   fs = require('fs'),
   util = require('util'),
+  crypto = require('crypto'),
+  EventEmitter = require('events').EventEmitter,
   ext = '.ptsb';
 
 /** Keep a table of locks to prevent the db from being opened more than once */
@@ -12,12 +14,25 @@ var lockTable = {};
  * @param object config config settings for db
  */
 function PTDB(path, config) {
+  this.events = {
+    load: 'load',
+    close: 'close',
+    save: 'save'
+  }
+
   this.config = config || {};
   this.path = path; // path to db file
   this.filename = path + ext;
   this.db = null; // The in-memory instance of the db
   this.syncInterval = null; // The interval object
+  this.dbHash = null; // used to check for changes
 }
+
+util.inherits(PTDB, EventEmitter);
+
+PTDB.prototype.defaults = {
+  syncInterval: 60000
+};
 
 /**
  * Loads the db
@@ -51,7 +66,11 @@ PTDB.prototype.load = function(callback) {
       };
     }
 
+    $this.dbHash = $this.hashDB();
+    $this.loaded = true;
+
     $this.startSync();
+    $this.emit($this.events.load);
     if (typeof callback === 'function') {
       callback.apply($this);
     }
@@ -63,10 +82,13 @@ PTDB.prototype.load = function(callback) {
  */
 PTDB.prototype.startSync = function() {
   var $this = this;
-  this.save(function() {
+  this.save(function(err) {
+    if (err) {
+      throw err;
+    }
     this.syncInterval = setInterval(function() {
       $this.save();
-    }, this.config.syncInterval || 60000);
+    }, this.config.syncInterval || this.defaults.syncInterval);
   });
 };
 
@@ -78,30 +100,49 @@ PTDB.prototype.stopSync = function() {
     clearInterval(this.syncInterval);
     this.syncInterval = null;
   }
-}
+};
 
 /**
  * Save the db to disk
- * @param function callback Callback
+ * @param function callback Callback gets argument of error
  */
 PTDB.prototype.save = function(callback) {
   if (!this.db) {
-    throw new VError('DB has not been loaded');
+    var err = new VError('DB has not been loaded');
+    if (typeof callback === 'function') {
+      callback(err); return;
+    } else {
+      throw err;
+    }
   }
 
-  this.db.info.modified = Date.now();
+  if (this.dbHash !== this.hashDB()) {
+    this.db.info.modified = Date.now();
+    this.dbHash = this.hashDB();
 
-  var serialized = this.serialize(),
-    $this = this;
-  fs.writeFile(this.filename, serialized, function(err) {
-    if (err) {
-      throw new VError(err, 'Could not open %s for writing', $this.filename);
-    }
+    var serialized = this.serialize(),
+      $this = this;
+    fs.writeFile(this.filename, serialized, function(err) {
+      if (err) {
+        var verr = new VError(err, 'Could not open %s for writing', $this.filename);
+        if (typeof callback === 'function') {
+          callback(verr); return;
+        } else {
+          throw verr;
+        }
+      }
 
+      $this.emit($this.events.save);
+      if (typeof callback === 'function') {
+        callback.apply($this);
+      }
+    });
+  } else {
+    // Call the callback
     if (typeof callback === 'function') {
-      callback.apply($this);
+      callback.apply(this);
     }
-  });
+  }
 };
 
 /**
@@ -109,11 +150,18 @@ PTDB.prototype.save = function(callback) {
  * @param function callback Callback
  */
 PTDB.prototype.close = function(callback) {
-  this.save(function() {
-    this.stopSync();
-    delete lockTable[this.filename];
-    this.db = null;
+  this.save(function(err) {
+    if (err) {
+      throw err;
+    }
 
+    this.db = null;
+    this.dbHash = null;
+    this.stopSync();
+    this.closed = true;
+    delete lockTable[this.filename];
+
+    this.emit(this.events.close);
     if (typeof callback === 'function') {
       callback();
     }
@@ -133,6 +181,16 @@ PTDB.prototype.serialize = function() {
 PTDB.prototype.unserialize = function(serialized) {
   return JSON.parse(serialized);
 };
+
+/**
+ * Return a hash of the data.
+ * @return string
+ */
+PTDB.prototype.hashDB = function() {
+  // Update the hash.
+  var hasher = crypto.createHash('md5').update(this.serialize());
+  return hasher.digest('hex');
+}
 
 /**
  * Parse a path and walk the db.
@@ -369,33 +427,39 @@ PTDB.prototype.unset = function(path, callback) {
   try {
     if (splody === '.') {
       this.db.records = {};
-      this.save(function() {
+      this.save(function(err) {
+        if (err) {
+          throw err;
+        }
+        if (typeof callback === 'function') {
+          callback();
+        }
+      });
+    } else {
+      for (var i = 0; i < splody.length - 1; i++) {
+        if (!item.hasOwnProperty(splody[i])) {
+          // It doesn't exist, so it's deleted
+          i = splody.length;
+        } else if (i < splody.length - 1 && typeof item[splody[i]] !== 'object') {
+          throw new VError('%s of %s is not an object, cannot go further', splody[i], path);
+        } else {
+          item = item[splody[i]];
+        }
+      }
+
+      if (item.hasOwnProperty(splody[i])) {
+        delete item[splody[i]];
+      }
+
+      this.save(function(err) {
+        if (err) {
+          throw err;
+        }
         if (typeof callback === 'function') {
           callback();
         }
       });
     }
-
-    for (var i = 0; i < splody.length - 1; i++) {
-      if (!item.hasOwnProperty(splody[i])) {
-        // It doesn't exist, so it's deleted
-        i = splody.length;
-      } else if (i < splody.length - 1 && typeof item[splody[i]] !== 'object') {
-        throw new VError('%s of %s is not an object, cannot go further', splody[i], path);
-      } else {
-        item = item[splody[i]];
-      }
-    }
-
-    if (item.hasOwnProperty(splody[i])) {
-      delete item[splody[i]];
-    }
-
-    this.save(function() {
-      if (typeof callback === 'function') {
-        callback();
-      }
-    });
   } catch (e) {
     if (typeof callback === 'function') {
       callback(e);

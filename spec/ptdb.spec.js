@@ -18,9 +18,13 @@ describe('PTDB', function() {
   it ('should create a new db', function(done) {
     var mydb = new PTDB(testDir + '/testDb');
     mydb.load(function() {
-      mydb.close(function() {
-        expect(fs.existsSync(mydb.filename)).toBeTruthy();
-        done();
+      expect(mydb.dbHash).not.toBeNull();
+      expect(mydb.db).not.toBeNull();
+      mydb.write('foo', 'bar', function(err) {
+        mydb.close(function() {
+          expect(fs.existsSync(mydb.filename)).toBeTruthy();
+          done();
+        });
       });
     });
   });
@@ -52,6 +56,8 @@ describe('PTDB', function() {
             mydb.close(function() {
               var samedb = new PTDB(testDir + '/testDb');
               samedb.load(function() {
+                expect(samedb.dbHash).not.toBeNull();
+                expect(samedb.db).not.toBeNull();
                 samedb.read('foo', function(err, item) {
                   expect(err).toBeFalsy();
                   expect(item).toEqual('bar');
@@ -185,7 +191,7 @@ describe('PTDB', function() {
     });
   });
 
-  describe('PTDB Reading', function() {
+  describe('Reading', function() {
     var mydb;
     beforeEach(function() {
       mydb = new PTDB(testDir + '/testDb');
@@ -285,6 +291,82 @@ describe('PTDB', function() {
           });
         });
       });
+    });
+  });
+
+  describe('Events', function() {
+    var mydb;
+    beforeEach(function() {
+      mydb = new PTDB(testDir + '/testDb', {syncInterval: 1000});
+    });
+
+    it ('should trigger the load event', function(done) {
+      var loaded = false;
+      mydb.on(mydb.events.load, function() {
+        loaded = true;
+      });
+      mydb.load(function() {
+        // return lock
+        mydb.close(function() {
+          done();
+        });
+      });
+
+      waitsFor(function() { return loaded; }, 'Load event triggered', 1000);
+    });
+
+
+    it ('should trigger the save event', function(done) {
+      var saved = false;
+      mydb.on(mydb.events.save, function() {
+        saved = true;
+      });
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          // return lock
+          mydb.close(function() {
+            done();
+          });
+        });
+      });
+
+      waitsFor(function() { return saved; }, 'Save event triggered', 1000);
+    });
+
+    it ('should trigger save event once', function(done) {
+      var saved = 0, closed = false;
+
+      mydb.on(mydb.events.save, function() {
+        saved++;
+      });
+      mydb.load(function() {
+        mydb.write('foo', 'bar', function(err) {
+          expect(err).toBeFalsy();
+          // return lock
+          mydb.close(function() {
+            closed = true;
+            done();
+          });
+        });
+      });
+
+      waitsFor(function() { return closed && saved === 1; }, 'Close event triggered', 1000);
+    });
+
+    it ('should trigger the close event', function(done) {
+      var closed = false;
+      mydb.on(mydb.events.close, function() {
+        closed = true;
+      });
+      mydb.load(function() {
+        // return lock
+        mydb.close(function() {
+          done();
+        });
+      });
+
+      waitsFor(function() { return closed; }, 'Close event triggered', 1000);
     });
   });
 });

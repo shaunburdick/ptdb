@@ -1,6 +1,6 @@
 {
   "name": "ptdb",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Plain Text object db",
   "author": "Shaun Burdick <github@shaunburdick.com>",
   "main": "ptdb.js",
@@ -28,5 +28,5 @@
   "scripts": {
     "test": "node_modules/jasmine-node/bin/jasmine-node spec --verbose --captureExceptions"
   },
-  "readmeFilename": "README.md"
+  "homepage": "https://github.com/shaunburdick/ptdb"
 }

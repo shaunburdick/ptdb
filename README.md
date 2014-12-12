@@ -4,6 +4,7 @@ Plain Text DB
 This is a lame little plugin that allows you to use a javascript object as a database.  You can save/load objects to file.
 
 ***Saving is not guaranteed***
+
 This is not meant to be a high-write db, this is meant to be something you can use when your app doesn't need an actual db.
 
 ## Install PTDB
@@ -24,6 +25,7 @@ To load/create a new DB, simply create a new instance and give it a name.
 
 You can specify the following config options:
 * **syncInterval**: the number of milleseconds between syncs to disk
+
 ```
 var mydb = new PTDB('mydb'); // creates/loads a new mydb.ptdb in local path
 mydb.load(function() {
@@ -35,6 +37,7 @@ var anotherdb = new PTDB('db/anotherdb', {syncInterval: 1000});  // creates/load
 
 ### Reading
 To read an item from the db:
+
 ```
 mydb.load(function() {
   // Read an item from the db
@@ -95,6 +98,7 @@ mydb.unset('.', function(err) {
 ### Closing
 You can close your db when you are done with it:
 This will break the lock and free the memory.
+
 ```
 mydb.close();
 ```
@@ -103,6 +107,7 @@ You can always reopen the db by loading again!
 
 ## Testing
 Run tests via
+
 ```
 npm run test
 ```

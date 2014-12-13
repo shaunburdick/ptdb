@@ -68,7 +68,6 @@ PTDB.prototype.load = function(callback) {
     }
 
     $this.dbHash = $this.hashDB();
-    $this.loaded = true;
 
     $this.startSync();
     $this.on($this.events.save, function() {
@@ -162,7 +161,6 @@ PTDB.prototype.close = function(callback) {
     this.db = null;
     this.dbHash = null;
     this.stopSync();
-    this.closed = true;
     delete lockTable[this.filename];
 
     this.emit(this.events.close);
@@ -513,9 +511,14 @@ PTDB.prototype.unwatch = function(path) {
 
 /**
  * Check for changes and trigger watchers.
+ * @param string path The path to trigger, null for all paths
  */
-PTDB.prototype.triggerWatchers = function() {
+PTDB.prototype.triggerWatchers = function(path) {
   for (var i in this.watchers) {
+    if (path && path !== i) {
+      continue;
+    }
+
     if (this.watchers.hasOwnProperty(i)) {
       $this = this;
       (function() {

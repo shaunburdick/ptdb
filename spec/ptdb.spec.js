@@ -373,6 +373,25 @@ describe('PTDB', function() {
       waitsFor(function() { return closed && saved === 1; }, 'Close event triggered', 1000);
     });
 
+    it ('should trigger save on an external change', function(done) {
+      var changed = false;
+      mydb.load(function() {
+        mydb.write('all.your.base', { foo: 'bar', fizz: ['buzz', 'doodle']}, function(err) {
+          expect(err).toBeFalsy();
+          mydb.on(mydb.events.save, function() {
+            changed = true;
+          });
+          mydb.db.records.all.your.base.fizz = 'pickle';
+          // return lock
+          mydb.close(function() {
+            done();
+          });
+        });
+      });
+
+      waitsFor(function() { return changed; }, 'Watcher to be triggered', 2000);
+    });
+
     it ('should trigger the close event', function(done) {
       var closed = false;
       mydb.on(mydb.events.close, function() {
@@ -404,6 +423,54 @@ describe('PTDB', function() {
             changed = true;
           });
           mydb.write('all.your.base', 'foo', function(err) {
+            expect(err).toBeFalsy();
+
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return changed; }, 'Watcher to be triggered', 2000);
+    });
+
+    it ('should provide previous value on trigger', function(done) {
+      var nulled = false, preved = false, testVal = 'pickle';
+      mydb.watch('all.your.base', function(newVal, oldVal, path) {
+        if (oldVal === null) {
+          nulled = true;
+        } else if (oldVal === testVal) {
+          preved = true;
+        }
+      });
+      mydb.load(function() {
+        mydb.write('all.your.base', testVal, function(err) {
+          expect(err).toBeFalsy();
+          mydb.write('all.your.base', 'foo', function(err) {
+            expect(err).toBeFalsy();
+
+            // return lock
+            mydb.close(function() {
+              done();
+            });
+          })
+        });
+      });
+
+      waitsFor(function() { return nulled && preved; }, 'Watcher to be triggered', 2000);
+    });
+
+    it ('should trigger a watcher on a child change', function(done) {
+      var changed = false;
+      mydb.load(function() {
+        mydb.write('all.your.base', { foo: 'bar', fizz: ['buzz', 'doodle']}, function(err) {
+          expect(err).toBeFalsy();
+          mydb.watch('all.your.base', function(newVal, oldVal, path) {
+            changed = true;
+          });
+          mydb.push('all.your.base.fizz', 'bang', function(err) {
             expect(err).toBeFalsy();
 
             // return lock
